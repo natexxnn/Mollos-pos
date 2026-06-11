@@ -106,6 +106,8 @@ body.kdsmode .knum{font-size:30px;}
 body.kdsmode .kit{font-size:15px;}
 .kc .kit small{display:block;opacity:.85;}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -342,6 +344,61 @@ body.kdsmode .kit{font-size:15px;}
 
 (function(){
 'use strict';
+
+// ============================================================
+// FIREBASE: puente a la nube (no toca diseno ni KDS)
+// ============================================================
+// >>> PEGA AQUI TU CONFIG (Consola Firebase > Config del proyecto > Tus apps)
+var firebaseConfig = {
+  apiKey: "AIzaSyCP_q9Rc3OJJ6_CSxuRnnRDF-KpQkG9Rro",
+  authDomain: "mollos-d7e01.firebaseapp.com",
+  databaseURL: "https://mollos-d7e01-default-rtdb.firebaseio.com",
+  projectId: "mollos-d7e01",
+  storageBucket: "mollos-d7e01.firebasestorage.app",
+  messagingSenderId: "505249242821",
+  appId: "1:505249242821:web:32cab4ab1be5baac739aac"
+};
+// <<< FIN CONFIG
+
+var fbReady = false, fbRef = null;
+try {
+  if (typeof firebase !== 'undefined' && firebaseConfig.apiKey !== 'PEGA_AQUI') {
+    firebase.initializeApp(firebaseConfig);
+    fbRef = firebase.database().ref('comandas');
+    fbReady = true;
+  }
+} catch(e) { console.warn('Firebase no inicializo:', e); }
+
+// Esta pantalla ESCUCHA la nube si es el monitor de cocina (#kds) o la PC madre (#madre)
+var ESCUCHA = (location.hash.indexOf('kds') >= 0) || (location.hash.indexOf('madre') >= 0);
+
+// Sube una orden a la nube (la llama el celular al generar la comanda)
+function pushNube(ord){
+  if(!fbReady) return;
+  try {
+    var payload = JSON.parse(JSON.stringify(ord));
+    payload.time = ord.time.getTime();
+    fbRef.child('orden_' + ord.num + '_' + payload.time).set(payload);
+  } catch(e){ console.warn('No se pudo enviar a nube:', e); }
+}
+
+// Escucha la nube y, al caer una orden nueva, dispara TU renderKDS de siempre
+function escucharNube(){
+  if(!fbReady || !ESCUCHA) return;
+  fbRef.on('child_added', function(snap){
+    var o = snap.val();
+    if(!o) return;
+    if(orders.some(function(x){ return x.cloudKey === snap.key; })) return;
+    o.time = new Date(o.time);
+    o.cloudKey = snap.key;
+    if(o.num >= oNum) oNum = o.num + 1;
+    orders.push(o);
+    saveState();
+    renderKDS();
+    if(typeof renderVentas === 'function') renderVentas();
+  });
+}
+
 
 // Logo: copiar del img oculto a los visibles
 var logoSrc = document.getElementById('logoData').src;
@@ -795,6 +852,7 @@ function sendOrder(){
     time:new Date(), status:'kitchen', pay:payInfo,
     address: dirInfo ? dirInfo.text : null, mapUrl: dirInfo ? dirInfo.url : null, cambio:cambio};
   orders.push(ord);
+  pushNube(ord);          // FIREBASE: sube al instante
   discInv(ord);
   $('onum').textContent = oNum;
   clrCart();
@@ -1192,6 +1250,7 @@ if(KDS_MODE){
   // Modo monitor de cocina (HDMI): pantalla completa, sin login, sincronizado por localStorage
   document.body.classList.add('kdsmode');
   renderKDS();
+  escucharNube();        // FIREBASE: la PC madre escucha la nube
   setInterval(function(){
     var c = $('kclk');
     if(c) c.textContent = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
