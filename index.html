@@ -394,6 +394,7 @@ function escucharNube(){
     if(o.num >= oNum) oNum = o.num + 1;
     orders.push(o);
     saveState();
+    beepKDS();          // pitido: entro comanda nueva
     renderKDS();
     if(typeof renderVentas === 'function') renderVentas();
   });
@@ -858,7 +859,7 @@ function sendOrder(){
   clrCart();
   saveState();
   renderKDS(); renderVentas();
-  openKdsWindow(); // abre/actualiza el monitor de cocina en otra ventana
+  // (Telefono se queda en la pantalla de toma de pedidos; NO abre la vista de cocina)
   alert('Orden #' + ord.num + ' enviada a cocina. Total: $' + total +
     (cambio != null ? ' | Cambio: $' + cambio.toFixed(2) : ''));
 }
@@ -960,12 +961,40 @@ function resetInv(){
   }
 }
 
+// ============ KDS: pitido nativo (Web Audio API) ============
+var _kdsAudio = null;
+function beepKDS(){
+  try{
+    if(!_kdsAudio){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      _kdsAudio = new AC();
+    }
+    if(_kdsAudio.state === 'suspended'){ _kdsAudio.resume(); }
+    var osc = _kdsAudio.createOscillator();
+    var gain = _kdsAudio.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 440;                 // 440 Hz
+    gain.gain.setValueAtTime(0.18, _kdsAudio.currentTime);
+    osc.connect(gain); gain.connect(_kdsAudio.destination);
+    osc.start();
+    osc.stop(_kdsAudio.currentTime + 0.2);     // 0.2 s
+  }catch(e){}
+}
+
 // ============ KDS (semaforo, en pestana y en monitor) ============
 function renderKDS(){
   drawKDS(KDS_MODE ? $('kgf') : $('kg'));
 }
 function drawKDS(el){
   if(!el) return;
+  // Ciclo de vida: a los 9.5 min la comanda se elimina sola de la pantalla
+  var _now = new Date();
+  orders.forEach(function(o){
+    if(o.status === 'kitchen' && (_now - o.time) / 60000 >= 9.5){
+      o.status = 'expired';
+    }
+  });
   var act = orders.filter(function(o){ return o.status === 'kitchen'; });
   el.innerHTML = '';
   if(!act.length){
@@ -977,7 +1006,7 @@ function drawKDS(el){
   }
   act.forEach(function(o){
     var ms = (new Date() - o.time) / 60000;
-    var cl = ms < 5 ? 'g' : (ms < 8 ? 'o' : 'r');
+    var cl = (ms >= 8) ? 'r' : (ms >= 5 ? 'o' : 'g');  // <5 verde | 5-8 naranja | 8+ rojo
     var mi = Math.floor(ms);
     var se = Math.floor((new Date() - o.time)/1000) % 60;
     var seStr = se < 10 ? '0'+se : ''+se;
