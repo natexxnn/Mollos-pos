@@ -506,10 +506,9 @@ body.kdsmode .kit{font-size:15px;}
   <div class="mb2">
     <button class="mx" data-close="mtrio2">&times;</button>
     <div class="mt" id="mt1">Selecciona PAN para el Trío</div>
-    <div class="mog" id="dpOpts"></div>
-    <div class="mt" id="mt2" style="font-size:13px;margin-top:12px">Selecciona 2 SALSAS para el Trío</div>
+    <div class="mog" id="dpOptsTrio"></div>
+    <div class="mt" id="mt2" style="font-size:13px;margin-top:12px">Selecciona 1 SALSA para el Trío</div>
     <div class="mog" id="dsOpts2"></div>
-    <div style="text-align:center;font-size:12px;color:var(--text2);margin-top:6px" id="dsCnt2">0/2 salsas</div>
     <button class="mbtn" id="mbtn2">Confirmar Trío</button>
   </div>
 </div>
@@ -518,6 +517,10 @@ body.kdsmode .kit{font-size:15px;}
   <div class="mb2">
     <button class="mx" data-close="mpago">&times;</button>
     <div class="mt" id="pagoTitle">Metodo de pago</div>
+    <div id="didiNumBox" style="display:none;margin-bottom:10px">
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Número de pedido DiDi</label>
+      <input type="text" class="minp" id="didiNum" placeholder="Ej: 1234" style="margin-top:0">
+    </div>
     <div class="mog" id="pagoOpts"></div>
     <div id="pagoCashBox" style="display:none">
       <input type="number" class="minp" id="pagoCash" placeholder="$ 0.00" min="0" step="0.5">
@@ -609,7 +612,9 @@ function pushNube(ord){
   try {
     var payload = JSON.parse(JSON.stringify(ord));
     payload.time = ord.time.getTime();
-    fbRef.child('orden_' + ord.num + '_' + payload.time).set(payload);
+    // Usar el uid como clave: si se sube dos veces, sobreescribe (no duplica)
+    var clave = ord.uid || ('orden_' + ord.num + '_' + payload.time);
+    fbRef.child(clave).set(payload);
   } catch(e){ console.warn('No se pudo enviar a nube:', e); }
 }
 
@@ -619,7 +624,14 @@ function escucharNube(){
   fbRef.on('child_added', function(snap){
     var o = snap.val();
     if(!o) return;
-    if(orders.some(function(x){ return x.cloudKey === snap.key; })) return;
+    // Deduplicar por uid (identificador permanente que viaja con la orden).
+    // Fallback a num si una orden vieja no tiene uid.
+    var oid = o.uid || ('num_' + o.num);
+    var yaExiste = orders.some(function(x){
+      var xid = x.uid || ('num_' + x.num);
+      return xid === oid;
+    });
+    if(yaExiste) return;
     o.time = new Date(o.time);
     o.cloudKey = snap.key;
     if(o.num >= oNum) oNum = o.num + 1;
@@ -804,13 +816,17 @@ function loadState(){
 // Sincronizacion en vivo entre ventanas (POS <-> monitor de cocina)
 window.addEventListener('storage', function(e){
   if(e.key !== STORE) return;
+  if(KDS_MODE){
+    // En el monitor de cocina, las comandas llegan SOLO por Firebase (escucharNube).
+    // No recargamos desde localStorage para no duplicar. Solo refrescamos el reloj/semáforo.
+    renderKDS();
+    return;
+  }
   loadState();
   renderKDS();
-  if(!KDS_MODE){
-    renderVentas(); renderInv(); renderGastos(); renderCart();
-    if(typeof renderFondos === 'function') renderFondos();
-    var on = $('onum'); if(on) on.textContent = oNum;
-  }
+  renderVentas(); renderInv(); renderGastos(); renderCart();
+  if(typeof renderFondos === 'function') renderFondos();
+  var on = $('onum'); if(on) on.textContent = oNum;
 });
 
 // ============ LOGIN ============
@@ -1010,6 +1026,7 @@ document.addEventListener('click', function(e){
   closeM(id);
   if(id==='mpan' || id==='msal' || id==='mhuevo') cancelPend();
   if(id==='mtrio') trioSel = [];
+  if(id==='mtrio2'){ dosPan = null; dosSals = []; }
   if(id==='mdos'){ dosPan = null; dosSals = []; }
   if(id==='mpago' && !payInfo){ delivery = null; refreshDelBtns(); updatePayRes(); }
   if(id==='mdir' && !dirInfo){ delivery = null; refreshDelBtns(); updatePayRes(); }
@@ -1025,11 +1042,16 @@ function openTrio(){
 function confTrio(){
   if(trioSel.length !== 3){ toast('Elige 3 proteinas', 'err'); return; }
   closeM('mtrio');
-  // Ahora pide pan para el trio
-  openTrioPan();
+  openTrioPanSalsas();
 }
-function openTrioPan(){
-  var dpOpts = $('dpOpts'); // reutilizar elemento del Dos
+
+// Modal del trío: pan (elige 1) + salsa (elige 1) en una sola pantalla
+function openTrioPanSalsas(){
+  dosPan = null;
+  dosSals = [];
+
+  // --- PAN (elige 1) ---
+  var dpOpts = $('dpOptsTrio');
   dpOpts.innerHTML = '';
   PANES.forEach(function(pan){
     var d = document.createElement('div'); d.className = 'mop'; d.textContent = pan;
@@ -1041,61 +1063,38 @@ function openTrioPan(){
     });
     dpOpts.appendChild(d);
   });
-  closeM('mdos');
-  $('mt1').textContent = 'Selecciona PAN para el Trío';
-  var mbtn = $('mbtn1');
-  mbtn.textContent = 'Continuar';
-  mbtn.onclick = function(){
-    if(!dosPan){ toast('Elige un pan', 'err'); return; }
-    openTrioSalsas();
-  };
-  openM('mtrio2');
-}
-function openTrioSalsas(){
-  closeM('mtrio2');
-  dosSals = [];
-  var dsOpts = document.getElementById('dsOpts2');
-  if(!dsOpts){
-    dsOpts = document.createElement('div');
-    dsOpts.id = 'dsOpts2';
-    dsOpts.className = 'mog';
-    var mb2 = $('mb2');
-    if(mb2) mb2.insertBefore(dsOpts, $('mbtn2') || $('mbtn2').parentNode);
-  }
+
+  // --- SALSA (elige 1, selección única) ---
+  var dsOpts = $('dsOpts2');
   dsOpts.innerHTML = '';
   SALS.forEach(function(sal){
     var d = document.createElement('div'); d.className = 'mop'; d.textContent = sal;
     d.addEventListener('click', function(){
-      var idx = dosSals.indexOf(sal);
-      if(idx >= 0){ dosSals.splice(idx,1); d.classList.remove('sel'); }
-      else { dosSals.push(sal); d.classList.add('sel'); }
-      var cnt = document.getElementById('dsCnt2');
-      if(cnt) cnt.textContent = dosSals.length + '/2 salsas';
+      dosSals = [sal];   // una sola salsa
+      var sibs = dsOpts.querySelectorAll('.mop');
+      for(var i=0;i<sibs.length;i++){ sibs[i].classList.remove('sel'); }
+      d.classList.add('sel');
     });
     dsOpts.appendChild(d);
   });
-  var cnt = document.getElementById('dsCnt2');
-  if(!cnt){
-    cnt = document.createElement('div');
-    cnt.id = 'dsCnt2';
-    cnt.style.cssText = 'text-align:center;margin-top:10px;font-size:12px;color:#6B4423';
-    if(dsOpts.parentNode) dsOpts.parentNode.insertBefore(cnt, dsOpts.nextSibling);
-  }
-  cnt.textContent = '0/2 salsas';
-  $('mt2').textContent = 'Selecciona 2 SALSAS para el Trío';
+
+  // --- BOTÓN CONFIRMAR ---
   var mbtn = $('mbtn2');
   mbtn.textContent = 'Confirmar Trío';
   mbtn.onclick = function(){
-    if(dosSals.length !== 2){ toast('Elige 2 salsas', 'err'); return; }
-    closeM('mtrio2');
-    var notes = 'Proteinas: ' + trioSel.join(', ') + ' | Pan: ' + dosPan + ' | Salsas: ' + dosSals.join(', ');
+    if(!dosPan){ toast('Elige un pan', 'err'); return; }
+    if(dosSals.length !== 1){ toast('Elige una salsa', 'err'); return; }
+    var notes = 'Proteinas: ' + trioSel.join(', ') + ' | Pan: ' + dosPan + ' | Salsa: ' + dosSals.join(', ');
     cart.push({name:'Combo Mollos Trio', price:110, key:'combo_trio', qty:1,
       notes:notes, prots:trioSel.slice(), pan:dosPan, salsas:dosSals.slice(), type:'combo'});
     renderCart(); saveState();
     trioSel = [];
     dosPan = null;
     dosSals = [];
+    closeM('mtrio2');
+    toast('Combo Trío agregado', 'ok');
   };
+
   openM('mtrio2');
 }
 
@@ -1255,10 +1254,14 @@ function openPago(mode){
     $('pagoTitle').textContent = 'Pago - DiDi';
     opts = ['Efectivo','Pago por DiDi'];
     hint = 'Cuanto efectivo entrego el repartidor? (DiDi no siempre da el efectivo exacto)';
+    // Mostrar casilla de número de pedido DiDi
+    $('didiNumBox').style.display = 'block';
+    $('didiNum').value = (payInfo && payInfo.didiNum) ? payInfo.didiNum : '';
   } else {
     $('pagoTitle').textContent = 'Pago - Domicilio';
     opts = ['Transferencia','Efectivo'];
     hint = 'Con cuanto paga el cliente? (solo para llevar cambio)';
+    $('didiNumBox').style.display = 'none';
   }
   $('pagoHint').textContent = hint;
   fillSingle('pagoOpts', opts, function(v, d, el){
@@ -1274,12 +1277,18 @@ function openPago(mode){
 function confPago(){
   if(!pagoSel){ toast('Elige un metodo de pago', 'err'); return; }
   var mode = $('mpago').getAttribute('data-mode');
+  // Número de pedido DiDi (obligatorio en modo didi)
+  var didiNum = null;
+  if(mode === 'didi'){
+    didiNum = $('didiNum').value.trim();
+    if(!didiNum){ toast('Escribe el número de pedido DiDi', 'err'); return; }
+  }
   if(pagoSel === 'Efectivo'){
     var c = parseFloat($('pagoCash').value);
     if(isNaN(c) || c <= 0){ toast('Indica el monto en efectivo', 'err'); return; }
-    payInfo = {method:'Efectivo', cash:c, mode:mode};
+    payInfo = {method:'Efectivo', cash:c, mode:mode, didiNum:didiNum};
   } else {
-    payInfo = {method:pagoSel, cash:null, mode:mode};
+    payInfo = {method:pagoSel, cash:null, mode:mode, didiNum:didiNum};
   }
   closeM('mpago');
   updatePayRes();
@@ -1342,7 +1351,8 @@ function sendOrder(){
   var cambio = null;
   if(payInfo.method === 'Efectivo' && payInfo.cash != null) cambio = r3(payInfo.cash - total);
   var cmdNotasTxt = ($('cmdNotas') ? $('cmdNotas').value.trim() : '');
-  var ord = {num:oNum++, items:cart.slice(), total:total, delivery:delivery, user:user,
+  var ord = {num:oNum++, uid:('o_' + Date.now() + '_' + Math.random().toString(36).slice(2,8)),
+    items:cart.slice(), total:total, delivery:delivery, user:user,
     time:new Date(), status:'kitchen', pay:payInfo, descuento:descInfo,
     address: dirInfo ? dirInfo.text : null, mapUrl: dirInfo ? dirInfo.url : null, cambio:cambio, notas:cmdNotasTxt};
   orders.push(ord);
@@ -1489,7 +1499,18 @@ function drawKDS(el){
       o.status = 'expired';
     }
   });
-  var act = orders.filter(function(o){ return o.status === 'kitchen'; });
+  // Filtrar pendientes Y deduplicar por uid (o num si no hay uid).
+  // Esta es la última línea de defensa: aunque el array tenga duplicados,
+  // en pantalla cada comanda aparece UNA sola vez.
+  var vistos = {};
+  var act = [];
+  orders.forEach(function(o){
+    if(o.status !== 'kitchen') return;
+    var id = o.uid || ('num_' + o.num);
+    if(vistos[id]) return;
+    vistos[id] = true;
+    act.push(o);
+  });
   el.innerHTML = '';
   if(!act.length){
     var d0 = document.createElement('div');
@@ -1508,12 +1529,22 @@ function drawKDS(el){
     var btn = document.createElement('button'); btn.className = 'kdb'; btn.textContent = 'Listo';
     btn.addEventListener('click', function(){
       o.status = 'done';
+      // Quitar de Firebase para que no reaparezca en el monitor
+      if(fbReady && fbRef && o.uid){
+        try { fbRef.child(o.uid).remove(); } catch(e){}
+      }
       saveState();
       renderKDS(); renderVentas();
     });
     var num = document.createElement('div'); num.className = 'knum'; num.textContent = 'Orden #' + o.num;
     var tm = document.createElement('div'); tm.className = 'ktm';
     tm.textContent = mi + ':' + seStr + ' | ' + (o.delivery === 'didi' ? 'DiDi' : 'Domicilio');
+    if(o.pay && o.pay.didiNum){
+      var dn = document.createElement('div');
+      dn.style.cssText = 'font-weight:700;font-size:14px;margin-top:2px';
+      dn.textContent = 'Pedido DiDi #' + o.pay.didiNum;
+      tm.appendChild(dn);
+    }
     var its = document.createElement('div'); its.className = 'kit';
     o.items.forEach(function(it){
       var line = document.createElement('div');
@@ -1555,7 +1586,16 @@ function renderVentas(){
     el.appendChild(d0);
     return;
   }
-  for(var i = orders.length - 1; i >= 0; i--){
+  // Deduplicar por uid/num antes de listar
+  var vistos = {};
+  var lista = [];
+  orders.forEach(function(o){
+    var id = o.uid || ('num_' + o.num);
+    if(vistos[id]) return;
+    vistos[id] = true;
+    lista.push(o);
+  });
+  for(var i = lista.length - 1; i >= 0; i--){
     (function(o){
       var card = document.createElement('div'); card.className = 'tk';
       var head = document.createElement('div');
@@ -1589,7 +1629,7 @@ function renderVentas(){
       card.appendChild(tot);
       card.addEventListener('click', function(){ showTicket(o); });
       el.appendChild(card);
-    })(orders[i]);
+    })(lista[i]);
   }
 }
 function showTicket(o){
@@ -1608,6 +1648,7 @@ function showTicket(o){
   row('Entrega', o.delivery === 'didi' ? 'DiDi' : 'Domicilio');
   row('Estatus', o.status === 'done' ? 'Listo' : 'En cocina');
   if(o.pay) row('Pago', o.pay.method + (o.pay.cash != null ? ' ($' + o.pay.cash + ')' : ''));
+  if(o.pay && o.pay.didiNum) row('Pedido DiDi', '#' + o.pay.didiNum);
   if(o.descuento) row('Descuento', o.descuento.nombre + ' (-' + o.descuento.pct + '%): -$' + o.descuento.monto.toFixed(2));
   if(o.cambio != null) row('Cambio a llevar', '$' + o.cambio.toFixed(2));
   if(o.address) row('Direccion', o.address);
@@ -1668,6 +1709,7 @@ function descargarTicket(){
   L.push('--------------------------------');
   L.push('Orden #' + o.num + '   ' + o.time.toLocaleDateString('es-MX'));
   L.push(o.time.toLocaleTimeString('es-MX') + '   ' + (o.delivery === 'didi' ? 'DiDi' : 'Domicilio'));
+  if(o.pay && o.pay.didiNum) L.push('Pedido DiDi #' + o.pay.didiNum);
   L.push('--------------------------------');
   o.items.forEach(function(it){
     L.push(lr(it.qty + 'x ' + it.name, '$' + (it.price*it.qty)));
@@ -2260,11 +2302,12 @@ function descargarCSV(nombre, filas){
 }
 
 function exportarVentas(){
-  var filas = [['Orden','Fecha','Hora','Usuario','Entrega','Metodo Pago','Descuento','Total','Productos']];
+  var filas = [['Orden','Pedido DiDi','Fecha','Hora','Usuario','Entrega','Metodo Pago','Descuento','Total','Productos']];
   orders.forEach(function(o){
     var prods = o.items.map(function(it){ return it.qty + 'x ' + it.name; }).join(' | ');
     filas.push([
       o.num,
+      (o.pay && o.pay.didiNum) ? o.pay.didiNum : '',
       o.time.toLocaleDateString('es-MX'),
       o.time.toLocaleTimeString('es-MX'),
       o.user,
@@ -2607,6 +2650,11 @@ function corteY(){
     // 2. Archivar gastos del dia al historial permanente (Firebase, 2 meses)
     archivarGastosDelDia();
 
+    // 2b. Limpiar comandas de Firebase (evita que se reacumulen/dupliquen)
+    if(fbReady && fbRef){
+      try { fbRef.remove(); } catch(e){ console.warn('No se pudo limpiar nube:', e); }
+    }
+
     // 3. Reiniciar datos del turno (NO el ahorro, ese es permanente)
     orders = [];
     gastos = [];
@@ -2760,10 +2808,12 @@ try {
 // Llenar selector de descuentos al arrancar
 if(typeof fillDescSelector === 'function') fillDescSelector();
 if(KDS_MODE){
-  // Modo monitor de cocina (HDMI): pantalla completa, sin login, sincronizado por localStorage
+  // Modo monitor de cocina (HDMI): pantalla completa, sin login.
+  // Las comandas vienen SOLO de Firebase para evitar duplicados.
   document.body.classList.add('kdsmode');
+  orders = [];           // arranca limpio; Firebase repuebla via child_added
   renderKDS();
-  escucharNube();        // FIREBASE: la PC madre escucha la nube
+  escucharNube();        // FIREBASE: el monitor escucha la nube
   setInterval(function(){
     var c = $('kclk');
     if(c) c.textContent = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
