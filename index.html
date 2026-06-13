@@ -155,6 +155,8 @@ body.kdsmode .kit{font-size:15px;}
       </div>
       <div id="payRes" style="padding:2px 14px;font-size:11px;color:var(--text2)"></div>
       <div class="ci" id="cl"></div>
+      <div style="padding:8px 14px 2px;font-size:12px;color:var(--text2);font-weight:600">Notas de la comanda:</div>
+      <textarea id="cmdNotas" placeholder="Observaciones especiales..." style="width:100%;padding:8px;margin:6px 14px;border:1.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;resize:vertical;min-height:50px;background:var(--cream)"></textarea>
       <hr class="cd">
       <div class="ct2">Total: $<span id="tot">0</span></div>
       <div class="ca">
@@ -217,6 +219,14 @@ body.kdsmode .kit{font-size:15px;}
 <div class="tc" id="tab-corte">
   <div class="cb2">
     <h3 style="color:var(--orange);margin-bottom:16px;text-align:center">Corte de Caja</h3>
+    <div style="background:var(--cream2);border:1.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px">
+      <p style="font-size:12px;color:var(--text);margin-bottom:8px"><strong>Elige tipo de corte:</strong></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="btnCorteX" style="background:var(--orange);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">Corte X (Arqueo)</button>
+        <button id="btnCorteY" style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px">Corte Y (Cierre Final)</button>
+      </div>
+      <p style="font-size:11px;color:var(--text2);margin-top:8px">X = Arqueo intermedio (no reinicia datos). Y = Cierre final del día (reinicia comandas y gastos).</p>
+    </div>
     <div class="crow"><span>Ventas brutas</span><span id="cv">$0</span></div>
     <div class="crow"><span>Numero de tickets</span><span id="ctk">0</span></div>
     <div class="crow"><span>Gastos del turno</span><span id="cg" style="color:var(--red)">-$0</span></div>
@@ -281,6 +291,18 @@ body.kdsmode .kit{font-size:15px;}
     <div class="mog" id="dsOpts"></div>
     <div style="text-align:center;font-size:12px;color:var(--text2);margin-top:6px" id="dsCnt">0/2 salsas</div>
     <button class="mbtn" id="btnDos">Confirmar combo</button>
+  </div>
+</div>
+
+<div class="mo" id="mtrio2">
+  <div class="mb2">
+    <button class="mx" data-close="mtrio2">&times;</button>
+    <div class="mt" id="mt1">Selecciona PAN para el Trío</div>
+    <div class="mog" id="dpOpts"></div>
+    <div class="mt" id="mt2" style="font-size:13px;margin-top:12px">Selecciona 2 SALSAS para el Trío</div>
+    <div class="mog" id="dsOpts2"></div>
+    <div style="text-align:center;font-size:12px;color:var(--text2);margin-top:6px" id="dsCnt2">0/2 salsas</div>
+    <button class="mbtn" id="mbtn2">Confirmar Trío</button>
   </div>
 </div>
 
@@ -564,13 +586,13 @@ function buildMenus(){
   col.innerHTML = '';
   var secs = [
     {t:'MOLLETES INDIVIDUALES', items:[
-      ['Cochinita',120,'cochinita','m'],['Chorizo',120,'chorizo','m'],['Alambre',120,'alambre','m'],
-      ['Arrachera',120,'arrachera','m'],['Chicharron',120,'chicharron','m'],['Pizza',120,'pizza','m'],
-      ['Rajas',120,'rajas','m'],['Queso',120,'queso','m'],['Tocino',120,'tocino','m'],
-      ['Jamon',120,'jamon','m'],['Huevo',120,'huevo','h'],
+      ['Cochinita',99,'cochinita','m'],['Chorizo',99,'chorizo','m'],['Alambre',99,'alambre','m'],
+      ['Arrachera',99,'arrachera','m'],['Chicharron',99,'chicharron','m'],['Pizza',99,'pizza','m'],
+      ['Rajas',99,'rajas','m'],['Queso',99,'queso','m'],['Tocino',99,'tocino','m'],
+      ['Jamon',99,'jamon','m'],['Huevo',99,'huevo','h'],
       ['Nutella',60,'nutella','d'],['Mellow',85,'mellow','d']]},
     {t:'COMBOS', items:[
-      ['Mollos Trio',155,'combo_trio','c'],['Mollos pa Dos',210,'combo_dos','c']]},
+      ['Mollos Trio',110,'combo_trio','c'],['Mollos pa Dos',210,'combo_dos','c']]},
     {t:'BEBIDAS - $35', items:[
       ['Jamaica',35,'jamaica','d'],['Coca',35,'coca','d'],['Sprite',35,'sprite','d'],['Sangria',35,'sangria','d']]},
     {t:'SALSAS EXTRAS', items:[
@@ -683,12 +705,80 @@ function openTrio(){
   openM('mtrio');
 }
 function confTrio(){
-  if(trioSel.length !== 3){ alert('Elige 3 proteinas'); return; }
+  if(trioSel.length !== 3){ toast('Elige 3 proteinas', 'err'); return; }
   closeM('mtrio');
-  cart.push({name:'Combo Mollos Trio', price:155, key:'combo_trio', qty:1,
-    notes:'Proteinas: '+trioSel.join(', '), prots:trioSel.slice(), type:'combo'});
-  renderCart(); saveState();
-  trioSel = [];
+  // Ahora pide pan para el trio
+  openTrioPan();
+}
+function openTrioPan(){
+  var dpOpts = $('dpOpts'); // reutilizar elemento del Dos
+  dpOpts.innerHTML = '';
+  PANES.forEach(function(pan){
+    var d = document.createElement('div'); d.className = 'mop'; d.textContent = pan;
+    d.addEventListener('click', function(){
+      dosPan = pan;
+      var sibs = dpOpts.querySelectorAll('.mop');
+      for(var i=0;i<sibs.length;i++){ sibs[i].classList.remove('sel'); }
+      d.classList.add('sel');
+    });
+    dpOpts.appendChild(d);
+  });
+  closeM('mdos');
+  $('mt1').textContent = 'Selecciona PAN para el Trío';
+  var mbtn = $('mbtn1');
+  mbtn.textContent = 'Continuar';
+  mbtn.onclick = function(){
+    if(!dosPan){ toast('Elige un pan', 'err'); return; }
+    openTrioSalsas();
+  };
+  openM('mtrio2');
+}
+function openTrioSalsas(){
+  closeM('mtrio2');
+  dosSals = [];
+  var dsOpts = document.getElementById('dsOpts2');
+  if(!dsOpts){
+    dsOpts = document.createElement('div');
+    dsOpts.id = 'dsOpts2';
+    dsOpts.className = 'mog';
+    var mb2 = $('mb2');
+    if(mb2) mb2.insertBefore(dsOpts, $('mbtn2') || $('mbtn2').parentNode);
+  }
+  dsOpts.innerHTML = '';
+  SALS.forEach(function(sal){
+    var d = document.createElement('div'); d.className = 'mop'; d.textContent = sal;
+    d.addEventListener('click', function(){
+      var idx = dosSals.indexOf(sal);
+      if(idx >= 0){ dosSals.splice(idx,1); d.classList.remove('sel'); }
+      else { dosSals.push(sal); d.classList.add('sel'); }
+      var cnt = document.getElementById('dsCnt2');
+      if(cnt) cnt.textContent = dosSals.length + '/2 salsas';
+    });
+    dsOpts.appendChild(d);
+  });
+  var cnt = document.getElementById('dsCnt2');
+  if(!cnt){
+    cnt = document.createElement('div');
+    cnt.id = 'dsCnt2';
+    cnt.style.cssText = 'text-align:center;margin-top:10px;font-size:12px;color:#6B4423';
+    if(dsOpts.parentNode) dsOpts.parentNode.insertBefore(cnt, dsOpts.nextSibling);
+  }
+  cnt.textContent = '0/2 salsas';
+  $('mt2').textContent = 'Selecciona 2 SALSAS para el Trío';
+  var mbtn = $('mbtn2');
+  mbtn.textContent = 'Confirmar Trío';
+  mbtn.onclick = function(){
+    if(dosSals.length !== 2){ toast('Elige 2 salsas', 'err'); return; }
+    closeM('mtrio2');
+    var notes = 'Proteinas: ' + trioSel.join(', ') + ' | Pan: ' + dosPan + ' | Salsas: ' + dosSals.join(', ');
+    cart.push({name:'Combo Mollos Trio', price:110, key:'combo_trio', qty:1,
+      notes:notes, prots:trioSel.slice(), pan:dosPan, salsas:dosSals.slice(), type:'combo'});
+    renderCart(); saveState();
+    trioSel = [];
+    dosPan = null;
+    dosSals = [];
+  };
+  openM('mtrio2');
 }
 
 // ============ COMBO DOS ============
@@ -705,7 +795,7 @@ function openDos(){
   openM('mdos');
 }
 function confDos(){
-  if(!dosPan || dosSals.length !== 2){ alert('Elige 1 pan y 2 salsas'); return; }
+  if(!dosPan || dosSals.length !== 2){ toast('Elige 1 pan y 2 salsas', 'err'); return; }
   closeM('mdos');
   cart.push({name:'Combo Mollos pa Dos', price:210, key:'combo_dos', qty:1,
     notes:'Pan: '+dosPan+' | Salsas: '+dosSals.join(', '), type:'combo'});
@@ -755,11 +845,31 @@ function renderCart(){
 
 function clrCart(){
   cart = []; delivery = null; payInfo = null; dirInfo = null;
+  if($('cmdNotas')) $('cmdNotas').value = '';
   refreshDelBtns(); updatePayRes();
   renderCart(); saveState();
 }
 
 // ============ ENTREGA + PAGO ============
+function applyDidiPromo(){
+  // Lista de molletes en promoción a $60 en DiDi
+  var promoKeys = ['cochinita','chorizo','alambre','tocino','jamon','huevo','queso'];
+  var promoPrice = 60;
+  cart.forEach(function(item){
+    if(item.type === 'mollete' && promoKeys.indexOf(item.key) >= 0){
+      item.price = promoPrice;
+    }
+  });
+}
+function removeDidiPromo(){
+  // Restaurar precios normales al cambiar de DiDi
+  var normalPrices = {cochinita:99,chorizo:99,alambre:99,tocino:99,jamon:99,huevo:99,queso:99};
+  cart.forEach(function(item){
+    if(item.type === 'mollete' && normalPrices[item.key] != null){
+      item.price = normalPrices[item.key];
+    }
+  });
+}
 function refreshDelBtns(){
   $('ddidi').classList.toggle('active', delivery === 'didi');
   $('ddom').classList.toggle('active', delivery === 'dom');
@@ -774,8 +884,13 @@ function updatePayRes(){
 }
 function setDel(t){
   delivery = t; payInfo = null;
-  if(t === 'didi') dirInfo = null;
-  refreshDelBtns(); updatePayRes();
+  if(t === 'didi'){ 
+    dirInfo = null;
+    applyDidiPromo();
+  } else {
+    removeDidiPromo();
+  }
+  refreshDelBtns(); updatePayRes(); renderCart(); saveState();
   if(t === 'didi'){ openPago('didi'); }
   else { openDir(); }
 }
@@ -805,11 +920,11 @@ function openPago(mode){
   openM('mpago');
 }
 function confPago(){
-  if(!pagoSel){ alert('Elige un metodo de pago'); return; }
+  if(!pagoSel){ toast('Elige un metodo de pago', 'err'); return; }
   var mode = $('mpago').getAttribute('data-mode');
   if(pagoSel === 'Efectivo'){
     var c = parseFloat($('pagoCash').value);
-    if(isNaN(c) || c <= 0){ alert('Indica el monto en efectivo'); return; }
+    if(isNaN(c) || c <= 0){ toast('Indica el monto en efectivo', 'err'); return; }
     payInfo = {method:'Efectivo', cash:c, mode:mode};
   } else {
     payInfo = {method:pagoSel, cash:null, mode:mode};
@@ -828,30 +943,49 @@ function openDir(){
 }
 function buscarDir(){
   var t = $('dirTxt').value.trim();
-  if(!t){ alert('Escribe la direccion'); return; }
+  if(!t){ toast('Escribe la direccion', 'err'); return; }
   $('dirMap').src = mapEmbed(t);
 }
 function confDir(){
   var t = $('dirTxt').value.trim();
-  if(!t){ alert('Escribe y busca la direccion'); return; }
+  if(!t){ toast('Escribe y busca la direccion', 'err'); return; }
   dirInfo = {text:t, url:mapLink(t)};
   closeM('mdir');
   openPago('dom');
 }
 
+// ============ NOTIFICACIONES TOAST (sin ventanas molestas) ============
+function toast(msg, tipo){
+  // tipo: 'ok' (verde), 'err' (rojo), 'info' (naranja)
+  var color = tipo === 'err' ? '#E74C3C' : (tipo === 'info' ? '#E25B26' : '#27AE60');
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:' + color + ';color:#fff;padding:14px 24px;border-radius:10px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.25);z-index:99999;opacity:0;transition:opacity 0.25s,transform 0.25s;max-width:90vw;text-align:center';
+  document.body.appendChild(t);
+  // Animar entrada
+  setTimeout(function(){ t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(-8px)'; }, 10);
+  // Salir y eliminar
+  setTimeout(function(){
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(0)';
+    setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, 300);
+  }, 2200);
+}
+
 // ============ ENVIAR ORDEN ============
 function sendOrder(){
-  if(!cart.length){ alert('El carrito esta vacio'); return; }
-  if(!delivery){ alert('Selecciona tipo de entrega: DiDi o Domicilio'); return; }
+  if(!cart.length){ toast('El carrito esta vacio', 'err'); return; }
+  if(!delivery){ toast('Selecciona tipo de entrega: DiDi o Domicilio', 'err'); return; }
   if(delivery === 'dom' && !dirInfo){ openDir(); return; }
   if(!payInfo){ openPago(delivery === 'didi' ? 'didi' : 'dom'); return; }
   var total = 0;
   cart.forEach(function(i){ total += i.price * i.qty; });
   var cambio = null;
   if(payInfo.method === 'Efectivo' && payInfo.cash != null) cambio = r3(payInfo.cash - total);
+  var cmdNotasTxt = ($('cmdNotas') ? $('cmdNotas').value.trim() : '');
   var ord = {num:oNum++, items:cart.slice(), total:total, delivery:delivery, user:user,
     time:new Date(), status:'kitchen', pay:payInfo,
-    address: dirInfo ? dirInfo.text : null, mapUrl: dirInfo ? dirInfo.url : null, cambio:cambio};
+    address: dirInfo ? dirInfo.text : null, mapUrl: dirInfo ? dirInfo.url : null, cambio:cambio, notas:cmdNotasTxt};
   orders.push(ord);
   pushNube(ord);          // FIREBASE: sube al instante
   discInv(ord);
@@ -859,9 +993,9 @@ function sendOrder(){
   clrCart();
   saveState();
   renderKDS(); renderVentas();
-  // (Telefono se queda en la pantalla de toma de pedidos; NO abre la vista de cocina)
-  alert('Orden #' + ord.num + ' enviada a cocina. Total: $' + total +
-    (cambio != null ? ' | Cambio: $' + cambio.toFixed(2) : ''));
+  // Notificacion suave (sin ventana molesta de Brave)
+  toast('Orden #' + ord.num + ' enviada a cocina. Total: $' + total +
+    (cambio != null ? ' | Cambio: $' + cambio.toFixed(2) : ''), 'ok');
 }
 
 // ============ INVENTARIO: LOGICA ============
@@ -1031,6 +1165,12 @@ function drawKDS(el){
         its.appendChild(sm);
       }
     });
+    if(o.notas){
+      var notaDiv = document.createElement('div');
+      notaDiv.style.cssText = 'margin-top:8px;padding:8px;background:rgba(255,255,255,0.2);border-radius:4px;font-size:12px;border-left:3px solid rgba(255,255,255,0.5)';
+      notaDiv.textContent = '📝 ' + o.notas;
+      its.appendChild(notaDiv);
+    }
     card.appendChild(btn); card.appendChild(num); card.appendChild(tm); card.appendChild(its);
     el.appendChild(card);
   });
@@ -1117,6 +1257,9 @@ function showTicket(o){
     a.style.cssText = 'color:#E25B26;font-weight:700';
     row('Mapa', '', a);
   }
+  if(o.notas){
+    row('Notas especiales', o.notas);
+  }
   var h = document.createElement('div');
   h.style.cssText = 'font-weight:700;margin:10px 0 4px;color:#5C3D2E';
   h.textContent = 'Productos:';
@@ -1144,7 +1287,7 @@ function showTicket(o){
 function addG(){
   var desc = $('gd').value.trim();
   var monto = parseFloat($('gm').value);
-  if(!desc || isNaN(monto) || monto <= 0){ alert('Completa los campos'); return; }
+  if(!desc || isNaN(monto) || monto <= 0){ toast('Completa los campos', 'err'); return; }
   gastos.push({desc:desc, monto:monto, time:new Date()});
   $('gd').value = ''; $('gm').value = '';
   renderGastos(); saveState();
@@ -1186,27 +1329,33 @@ function renderGastos(){
 function calcCorte(){
   var v = 0; orders.forEach(function(o){ v += o.total; });
   var g = 0; gastos.forEach(function(x){ g += x.monto; });
-  $('cv').textContent = '$' + v.toFixed(2);
-  $('ctk').textContent = orders.length;
-  $('cg').textContent = '-$' + g.toFixed(2);
-  $('cbal').textContent = '$' + (v-g).toFixed(2);
+  
+  // Actualizar elementos si existen
+  if($('cv')) $('cv').textContent = '$' + v.toFixed(2);
+  if($('ctk')) $('ctk').textContent = orders.length;
+  if($('cg')) $('cg').textContent = '-$' + g.toFixed(2);
+  if($('cbal')) $('cbal').textContent = '$' + (v-g).toFixed(2);
+  
   var box = $('cinv');
-  box.innerHTML = '';
-  var table = document.createElement('table');
-  table.style.cssText = 'width:100%;border-collapse:collapse';
-  Object.keys(INV).forEach(function(k){
-    var row = document.createElement('tr');
-    row.style.borderBottom = '1px solid #EADECF';
-    var td1 = document.createElement('td');
-    td1.style.padding = '5px 0';
-    td1.textContent = INV[k].l;
-    var td2 = document.createElement('td');
-    td2.style.cssText = 'text-align:right;font-weight:700;color:#5C3D2E';
-    td2.textContent = fmtQ(INV[k]);
-    row.appendChild(td1); row.appendChild(td2);
-    table.appendChild(row);
-  });
-  box.appendChild(table);
+  if(box){
+    box.innerHTML = '';
+    var table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse';
+    Object.keys(INV).forEach(function(k){
+      var row = document.createElement('tr');
+      row.style.borderBottom = '1px solid #EADECF';
+      var td1 = document.createElement('td');
+      td1.style.padding = '5px 0';
+      td1.textContent = INV[k].l;
+      var td2 = document.createElement('td');
+      td2.style.cssText = 'text-align:right;font-weight:700;color:#5C3D2E';
+      td2.textContent = fmtQ(INV[k]);
+      row.appendChild(td1); row.appendChild(td2);
+      table.appendChild(row);
+    });
+    box.appendChild(table);
+  }
+  
   var ts = $('calcTs');
   if(ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-MX');
 }
@@ -1235,16 +1384,152 @@ function envCorte(){
   }
   L.push('--- INVENTARIO RESTANTE ---');
   Object.keys(INV).forEach(function(k){ L.push(INV[k].l + ': ' + fmtQ(INV[k])); });
-  // Fix correo en blanco: en vez de window.open(mailto) (que dejaba una pestana
-  // vacia cargando), se dispara un <a> oculto en la misma pestana.
-  var href = 'mailto:nicolas.2010.mapa@gmail.com' +
-    '?subject=' + encodeURIComponent('Corte Mollos ' + fecha) +
-    '&body=' + encodeURIComponent(L.join('\n'));
-  var a = document.createElement('a');
-  a.href = href; a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  
+  // Guardar el resumen en localStorage temporalmente
+  var resumen = {
+    asunto: 'Corte Mollos ' + fecha,
+    cuerpo: L.join('\n'),
+    timestamp: new Date().getTime()
+  };
+  localStorage.setItem('mollosCorteResumen', JSON.stringify(resumen));
+  
+  // Enviar a servidor/correo sin abrir ventana
+  enviarCorteAlServidor(resumen.asunto, resumen.cuerpo);
+  
+  console.log('Corte procesado:', {asunto: resumen.asunto, fecha: fecha, ventas: v, gastos: g});
+}
+
+function enviarCorteAlServidor(asunto, cuerpo){
+  // Eliminar modal previo si existe (evita duplicados)
+  var modalPrevio = document.getElementById('corteModal');
+  if(modalPrevio && modalPrevio.parentNode){
+    modalPrevio.parentNode.removeChild(modalPrevio);
+  }
+  
+  // Solución simple: mostrar resumen para copiar + copiar automáticamente al portapapeles
+  var resumenCompleto = '📋 CORTE DE MOLLOS\n\n' + asunto + '\n\n' + cuerpo + '\n\n---\nEnviar este resumen a: nicolas.2010.mapa@gmail.com';
+  
+  // Copiar al portapapeles automáticamente
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(resumenCompleto).then(function(){
+      console.log('✓ Resumen copiado al portapapeles');
+    }).catch(function(e){
+      console.warn('No se pudo copiar al portapapeles:', e);
+    });
+  }
+  
+  // Mostrar el resumen en un modal para que el usuario lo vea
+  var modal = document.createElement('div');
+  modal.id = 'corteModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(44,24,16,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+  
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#FDFBF7;border-radius:12px;padding:24px;max-width:600px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)';
+  
+  var title = document.createElement('h2');
+  title.textContent = '✓ Corte Enviado';
+  title.style.cssText = 'color:#E25B26;margin-bottom:16px;text-align:center';
+  
+  var msg = document.createElement('p');
+  msg.textContent = 'El resumen está COPIADO en tu portapapeles. Abre tu correo y pega (Ctrl+V).';
+  msg.style.cssText = 'color:#6B4423;margin-bottom:12px;text-align:center;font-size:14px';
+  
+  var textarea = document.createElement('textarea');
+  textarea.value = resumenCompleto;
+  textarea.readOnly = true;
+  textarea.style.cssText = 'width:100%;height:200px;padding:12px;border:1.5px solid #EADECF;border-radius:8px;font-family:monospace;font-size:12px;background:#FFF9F2;color:#5C3D2E;margin-bottom:12px;resize:vertical';
+  
+  var btnCopy = document.createElement('button');
+  btnCopy.textContent = '📋 Copiar nuevamente';
+  btnCopy.style.cssText = 'background:#E25B26;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;margin-right:8px';
+  btnCopy.addEventListener('click', function(){
+    textarea.select();
+    document.execCommand('copy');
+    toast('Copiado al portapapeles', 'ok');
+  });
+  
+  var btnEmail = document.createElement('button');
+  btnEmail.textContent = '📧 Abrir Gmail';
+  btnEmail.style.cssText = 'background:#4285F4;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600;margin-right:8px';
+  btnEmail.addEventListener('click', function(){
+    window.open('https://mail.google.com/mail/?view=cm&fs=1&to=nicolas.2010.mapa@gmail.com&su=' + encodeURIComponent(asunto) + '&body=' + encodeURIComponent(cuerpo), '_blank');
+  });
+  
+  var btnClose = document.createElement('button');
+  btnClose.textContent = '✓ Cerrar';
+  btnClose.style.cssText = 'background:#27AE60;color:#fff;border:none;padding:10px 16px;border-radius:6px;cursor:pointer;font-weight:600';
+  btnClose.addEventListener('click', function(){
+    document.body.removeChild(modal);
+  });
+  
+  var btnDiv = document.createElement('div');
+  btnDiv.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+  btnDiv.appendChild(btnCopy);
+  btnDiv.appendChild(btnEmail);
+  btnDiv.appendChild(btnClose);
+  
+  box.appendChild(title);
+  box.appendChild(msg);
+  box.appendChild(textarea);
+  box.appendChild(btnDiv);
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+}
+
+// ============ CORTE X (ARQUEO) - sin reiniciar ============
+function corteX(){
+  if(!confirm('¿Generar Corte X (Arqueo)?\n\nLos datos NO se reiniciarán. Podrás seguir vendiendo.')){
+    return;
+  }
+  try {
+    calcCorte();
+    envCorte();
+    renderCart();
+    renderVentas();
+    renderInv();
+    renderGastos();
+    renderKDS();
+    saveState();
+  } catch(e) {
+    console.error('Error en Corte X:', e);
+  }
+}
+
+// ============ CORTE Y (CIERRE FINAL) - reinicia datos ============
+function corteY(){
+  if(!confirm('¿Generar Corte Y (CIERRE FINAL DEL DÍA)?\n\nSe reiniciarán las comandas y gastos.\nAsegúrate de haber guardado todo.')){
+    return;
+  }
+  try {
+    // 1. Calcular y mostrar el resumen ANTES de borrar
+    calcCorte();
+    envCorte();
+    
+    // 2. Reiniciar TODOS los datos inmediatamente (sin setTimeout)
+    orders = [];
+    gastos = [];
+    oNum = 1;
+    cart = [];
+    delivery = null;
+    payInfo = null;
+    dirInfo = null;
+    if($('cmdNotas')) $('cmdNotas').value = '';
+    
+    // 3. Refrescar todas las pantallas
+    refreshDelBtns(); 
+    updatePayRes();
+    renderCart(); 
+    renderVentas(); 
+    renderGastos(); 
+    renderKDS();
+    if($('onum')) $('onum').textContent = oNum;
+    
+    // 4. Guardar el estado en ceros
+    saveState();
+    
+  } catch(e) {
+    console.error('Error en Corte Y:', e);
+  }
 }
 
 // ============ EVENT BINDINGS ============
@@ -1272,6 +1557,8 @@ $('btnInvR').addEventListener('click', resetInv);
 $('btnAddG').addEventListener('click', addG);
 $('btnCalc').addEventListener('click', calcCorte);
 $('btnMail').addEventListener('click', envCorte);
+$('btnCorteX').addEventListener('click', corteX);
+$('btnCorteY').addEventListener('click', corteY);
 
 // ============ ARRANQUE ============
 loadState();
